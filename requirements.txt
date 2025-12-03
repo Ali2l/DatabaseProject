@@ -1,0 +1,3 @@
+mysql-connector-python==8.2.0
+redis==5.0.1
+crc16==0.1.1
