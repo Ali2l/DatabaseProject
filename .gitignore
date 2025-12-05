@@ -1,0 +1,4 @@
+redis-cluster/
+*.aof
+*.rdb
+__pycache__/

@@ -1,340 +1,223 @@
 #!/usr/bin/env python3
 """
-Redis Queries Module
-Handles querying data from Redis without using MySQL.
-Demonstrates how to retrieve and join data using Redis data structures.
+Redis Queries - Interactive queries on Redis Cluster
 """
+
+import crc16
 
 
 class RedisQueries:
-    """
-    Class to handle Redis query operations.
-    Demonstrates:
-    - Querying data from Key-Value store without SQL
-    - Relationship traversal without JOINs
-    - Using Lists, Hashes, and Sets for data retrieval
-    """
+    """Interactive query interface for Redis Cluster."""
     
     def __init__(self, redis_connection):
-        """
-        Initialize with an existing Redis connection.
-        
-        Args:
-            redis_connection: Active Redis connection object
-        """
         self.connection = redis_connection
     
     def get_hash_slot(self, key):
-        """
-        Calculate the Redis hash slot for a given key.
-        
-        Args:
-            key: Redis key string
-        
-        Returns:
-            int: Hash slot number (0-16383)
-        """
-        import crc16
-        checksum = crc16.crc16xmodem(key.encode('utf-8'))
-        slot = checksum % 16384
-        return slot
+        """Calculate hash slot for a key."""
+        return crc16.crc16xmodem(key.encode('utf-8')) % 16384
     
-    def get_user_booking_history(self, user_id):
-        """
-        Query a user's complete booking history from Redis WITHOUT using MySQL.
-        Demonstrates how to handle relationships in Redis without SQL JOINs.
-        
-        Args:
-            user_id: The user ID to query
-        
-        Returns:
-            list: List of booking details with hotel information
-        
-        Process:
-            1. Fetch the list of booking IDs from user's list key (user:X:bookings)
-            2. For each booking ID, fetch booking details from Hash (booking:X)
-            3. For each booking, fetch hotel details from Hash (hotel:X)
-            4. Combine and return all information
-        """
-        print("\n" + "="*70)
-        print(f"REDIS QUERY: Get User {user_id} Booking History (NO MySQL)")
-        print("="*70)
-        
-        if not self.connection:
-            print("Error: No active Redis connection")
-            return []
-        
-        try:
-            # Step 1: Get user details
-            user_key = f"user:{user_id}"
-            user_data = self.connection.hgetall(user_key)
-            
-            if not user_data:
-                print(f"User {user_id} not found in Redis")
-                return []
-            
-            print(f"\nUser Information:")
-            print(f"   ID: {user_data.get('id')}")
-            print(f"   Name: {user_data.get('name')}")
-            print(f"   Email: {user_data.get('email')}")
-            
-            # Step 2: Fetch the list of booking IDs from the user's list
-            user_bookings_key = f"user:{user_id}:bookings"
-            booking_ids = self.connection.lrange(user_bookings_key, 0, -1)
-            
-            hash_slot = self.get_hash_slot(user_bookings_key)
-            print(f"\nFetching booking list from: {user_bookings_key} (Hash Slot: {hash_slot})")
-            print(f"   Found {len(booking_ids)} booking(s): {booking_ids}")
-            
-            if not booking_ids:
-                print(f"   User {user_id} has no bookings")
-                return []
-            
-            print(f"\nBooking Details:")
-            print("-" * 70)
-            
-            booking_history = []
-            
-            for idx, booking_id in enumerate(booking_ids, 1):
-                # Fetch booking hash
-                booking_key = f"booking:{booking_id}"
-                booking_data = self.connection.hgetall(booking_key)
-                
-                if not booking_data:
-                    print(f"   Warning: Booking {booking_id} not found")
-                    continue
-                
-                booking_slot = self.get_hash_slot(booking_key)
-                
-                # Fetch hotel details for this booking
-                hotel_id = booking_data.get('hotel_id')
-                hotel_key = f"hotel:{hotel_id}"
-                hotel_data = self.connection.hgetall(hotel_key)
-                hotel_slot = self.get_hash_slot(hotel_key)
-                
-                # Combine information
-                combined_info = {
-                    'booking_id': booking_data.get('id'),
-                    'date': booking_data.get('date'),
-                    'hotel_id': hotel_data.get('id'),
-                    'hotel_name': hotel_data.get('name'),
-                    'hotel_city': hotel_data.get('city'),
-                    'created_at': booking_data.get('created_at')
-                }
-                
-                booking_history.append(combined_info)
-                
-                # Print formatted output
-                print(f"\n   Booking #{idx}:")
-                print(f"   ├─ Booking ID: {booking_data.get('id')} (Hash Slot: {booking_slot})")
-                print(f"   ├─ Date: {booking_data.get('date')}")
-                print(f"   ├─ Hotel: {hotel_data.get('name')} (ID: {hotel_id}, Hash Slot: {hotel_slot})")
-                print(f"   ├─ City: {hotel_data.get('city')}")
-                print(f"   └─ Booked on: {booking_data.get('created_at')}")
-            
-            print("-" * 70)
-            print(f"Retrieved {len(booking_history)} booking(s) from Redis (NO MySQL USED)")
-            print("="*70)
-            
-            return booking_history
-        
-        except Exception as e:
-            print(f"Error querying user history: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
+    def get_node_port(self, slot):
+        """Get the port of the node that handles this slot."""
+        if slot <= 5460:
+            return 7001
+        elif slot <= 10922:
+            return 7002
+        return 7003
     
-    def get_hotels_by_city(self, city):
-        """
-        Query all hotels in a specific city.
-        
-        Args:
-            city: City name to search for
-        
-        Returns:
-            list: List of hotel details
-        """
-        print(f"\n--- Query: Hotels in {city} ---")
-        
-        try:
-            # Get hotel IDs from city index
-            city_key = f"hotels:city:{city}"
-            hotel_ids = self.connection.smembers(city_key)
+    def run_interactive(self):
+        """Run interactive query menu."""
+        while True:
+            print("\nQuery Menu:")
+            print("1. Get user by ID")
+            print("2. Get user by email")
+            print("3. Get user's bookings")
+            print("4. Get hotel by ID")
+            print("5. Get hotels by city")
+            print("6. Get booking by ID")
+            print("7. List all users")
+            print("8. List all hotels")
+            print("9. List all bookings")
+            print("10. Show key info")
+            print("0. Exit")
             
-            if not hotel_ids:
-                print(f"No hotels found in {city}")
-                return []
+            choice = input("Choice: ").strip()
             
-            hotels = []
-            for hotel_id in hotel_ids:
-                hotel_key = f"hotel:{hotel_id}"
-                hotel_data = self.connection.hgetall(hotel_key)
-                if hotel_data:
-                    hotels.append(hotel_data)
-                    print(f"  {hotel_data.get('name')} (ID: {hotel_id})")
-            
-            return hotels
-        
-        except Exception as e:
-            print(f"Error querying hotels by city: {e}")
-            return []
+            if choice == "0":
+                break
+            elif choice == "1":
+                self.query_user_by_id()
+            elif choice == "2":
+                self.query_user_by_email()
+            elif choice == "3":
+                self.query_user_bookings()
+            elif choice == "4":
+                self.query_hotel_by_id()
+            elif choice == "5":
+                self.query_hotels_by_city()
+            elif choice == "6":
+                self.query_booking_by_id()
+            elif choice == "7":
+                self.list_all_users()
+            elif choice == "8":
+                self.list_all_hotels()
+            elif choice == "9":
+                self.list_all_bookings()
+            elif choice == "10":
+                self.show_key_info()
     
-    def get_bookings_by_date(self, date):
-        """
-        Query all bookings for a specific date.
+    def query_user_by_id(self):
+        """Get user by ID."""
+        user_id = input("User ID: ").strip()
+        if not user_id:
+            return
         
-        Args:
-            date: Date to search for (YYYY-MM-DD format)
+        key = f"user:{user_id}"
+        slot = self.get_hash_slot(key)
+        user = self.connection.hgetall(key)
         
-        Returns:
-            list: List of booking details
-        """
-        print(f"\n--- Query: Bookings on {date} ---")
-        
-        try:
-            # Get booking IDs from date index
-            date_key = f"bookings:date:{date}"
-            booking_ids = self.connection.smembers(date_key)
-            
-            if not booking_ids:
-                print(f"No bookings found on {date}")
-                return []
-            
-            bookings = []
-            for booking_id in booking_ids:
-                booking_key = f"booking:{booking_id}"
-                booking_data = self.connection.hgetall(booking_key)
-                if booking_data:
-                    bookings.append(booking_data)
-                    print(f"  Booking {booking_id}: User {booking_data.get('user_id')} → Hotel {booking_data.get('hotel_id')}")
-            
-            return bookings
-        
-        except Exception as e:
-            print(f"Error querying bookings by date: {e}")
-            return []
+        if user:
+            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            print(f"Name: {user.get('name')}, Email: {user.get('email')}")
+        else:
+            print("User not found")
     
-    def get_user_by_email(self, email):
-        """
-        Find a user by email address.
+    def query_user_by_email(self):
+        """Get user by email."""
+        email = input("Email: ").strip()
+        if not email:
+            return
         
-        Args:
-            email: User's email address
+        user_id = self.connection.get(f"user:email:{email}")
+        if not user_id:
+            print("User not found")
+            return
         
-        Returns:
-            dict: User data or None if not found
-        """
-        print(f"\n--- Query: User with email {email} ---")
-        
-        try:
-            # Use email index to find user ID
-            email_key = f"user:email:{email}"
-            user_id = self.connection.get(email_key)
-            
-            if not user_id:
-                print(f"No user found with email {email}")
-                return None
-            
-            # Fetch user data
-            user_key = f"user:{user_id}"
-            user_data = self.connection.hgetall(user_key)
-            
-            if user_data:
-                print(f"  Found: {user_data.get('name')} (ID: {user_id})")
-            
-            return user_data
-        
-        except Exception as e:
-            print(f"Error querying user by email: {e}")
-            return None
+        user = self.connection.hgetall(f"user:{user_id}")
+        print(f"ID: {user_id}, Name: {user.get('name')}, Email: {user.get('email')}")
     
-    def get_all_users(self):
-        """
-        Retrieve all users from Redis.
+    def query_user_bookings(self):
+        """Get user's bookings."""
+        user_id = input("User ID: ").strip()
+        if not user_id:
+            return
         
-        Returns:
-            list: List of all user data
-        """
-        print("\n--- Query: All Users ---")
+        user = self.connection.hgetall(f"user:{user_id}")
+        if not user:
+            print("User not found")
+            return
         
-        try:
-            user_ids = self.connection.smembers('users:all')
-            users = []
-            
-            for user_id in user_ids:
-                user_key = f"user:{user_id}"
-                user_data = self.connection.hgetall(user_key)
-                if user_data:
-                    users.append(user_data)
-                    print(f"  {user_data.get('name')} ({user_data.get('email')})")
-            
-            return users
+        print(f"User: {user['name']}")
         
-        except Exception as e:
-            print(f"Error querying all users: {e}")
-            return []
+        booking_ids = self.connection.lrange(f"user:{user_id}:bookings", 0, -1)
+        if not booking_ids:
+            print("No bookings")
+            return
+        
+        for bid in booking_ids:
+            booking = self.connection.hgetall(f"booking:{bid}")
+            hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
+            slot = self.get_hash_slot(f"booking:{bid}")
+            print(f"Booking {bid}: {booking['date']} at {hotel['name']} (slot {slot}, port {self.get_node_port(slot)})")
     
-    def search_user_by_id(self, user_id):
-        """
-        Search for a specific user by ID and display data.
-        Demonstrates both HASH commands (HGETALL) and simple GET.
+    def query_hotel_by_id(self):
+        """Get hotel by ID."""
+        hotel_id = input("Hotel ID: ").strip()
+        if not hotel_id:
+            return
         
-        Args:
-            user_id: The user ID to search for
+        key = f"hotel:{hotel_id}"
+        slot = self.get_hash_slot(key)
+        hotel = self.connection.hgetall(key)
         
-        Returns:
-            dict: User data or None if not found
-        """
-        print("\n" + "="*70)
-        print(f"SEARCH: User ID {user_id}")
-        print("="*70)
+        if hotel:
+            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            print(f"Name: {hotel.get('name')}, City: {hotel.get('city')}")
+        else:
+            print("Hotel not found")
+    
+    def query_hotels_by_city(self):
+        """Get hotels by city."""
+        city = input("City: ").strip()
+        if not city:
+            return
         
-        try:
-            user_key = f"user:{user_id}"
-            hash_slot = self.get_hash_slot(user_key)
-            
-            print(f"\nSearching for key: {user_key}")
-            print(f"   Hash Slot: {hash_slot}")
-            
-            print(f"\nMethod 1: Using HGETALL (Hash)")
-            print(f"   Command: HGETALL {user_key}")
-            user_data = self.connection.hgetall(user_key)
-            
-            if not user_data:
-                print(f"   User {user_id} not found")
-                return None
-            
-            print(f"   Found user data:")
-            print(f"   ├─ ID: {user_data.get('id')}")
-            print(f"   ├─ Name: {user_data.get('name')}")
-            print(f"   ├─ Email: {user_data.get('email')}")
-            print(f"   └─ Created: {user_data.get('created_at')}")
-            
-            print(f"\nMethod 2: Using HGET (Individual fields)")
-            print(f"   Command: HGET {user_key} name")
-            name = self.connection.hget(user_key, 'name')
-            print(f"   Result: {name}")
-            
-            print(f"\n   Command: HGET {user_key} email")
-            email = self.connection.hget(user_key, 'email')
-            print(f"   Result: {email}")
-            
-            print(f"\nMethod 3: Using EXISTS")
-            print(f"   Command: EXISTS {user_key}")
-            exists = self.connection.exists(user_key)
-            print(f"   Result: {exists} (1 = exists, 0 = does not exist)")
-            
-            bookings_key = f"user:{user_id}:bookings"
-            bookings_slot = self.get_hash_slot(bookings_key)
-            print(f"\nRelated Data:")
-            print(f"   Command: LRANGE {bookings_key} 0 -1")
-            booking_ids = self.connection.lrange(bookings_key, 0, -1)
-            print(f"   Booking IDs: {booking_ids if booking_ids else 'None'}")
-            print(f"   Hash Slot: {bookings_slot}")
-            
-            print("\n" + "="*70)
-            return user_data
+        hotel_ids = self.connection.smembers(f"hotels:city:{city}")
+        if not hotel_ids:
+            print("No hotels found")
+            return
         
-        except Exception as e:
-            print(f"Error searching for user: {e}")
-            return None
+        for hid in hotel_ids:
+            hotel = self.connection.hgetall(f"hotel:{hid}")
+            print(f"{hotel['name']}")
+    
+    def query_booking_by_id(self):
+        """Get booking by ID."""
+        booking_id = input("Booking ID: ").strip()
+        if not booking_id:
+            return
+        
+        key = f"booking:{booking_id}"
+        slot = self.get_hash_slot(key)
+        booking = self.connection.hgetall(key)
+        
+        if booking:
+            user = self.connection.hgetall(f"user:{booking['user_id']}")
+            hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
+            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            print(f"Date: {booking['date']}, User: {user['name']}, Hotel: {hotel['name']}")
+        else:
+            print("Booking not found")
+    
+    def list_all_users(self):
+        """List all users."""
+        user_ids = self.connection.smembers('users:all')
+        for uid in sorted(user_ids):
+            user = self.connection.hgetall(f"user:{uid}")
+            slot = self.get_hash_slot(f"user:{uid}")
+            print(f"[{uid}] {user['name']} - port {self.get_node_port(slot)}")
+    
+    def list_all_hotels(self):
+        """List all hotels."""
+        hotel_ids = self.connection.smembers('hotels:all')
+        for hid in sorted(hotel_ids):
+            hotel = self.connection.hgetall(f"hotel:{hid}")
+            slot = self.get_hash_slot(f"hotel:{hid}")
+            print(f"[{hid}] {hotel['name']} in {hotel['city']} - port {self.get_node_port(slot)}")
+    
+    def list_all_bookings(self):
+        """List all bookings."""
+        # Get all booking IDs by checking users' booking lists
+        all_bookings = set()
+        user_ids = self.connection.smembers('users:all')
+        for uid in user_ids:
+            booking_ids = self.connection.lrange(f"user:{uid}:bookings", 0, -1)
+            all_bookings.update(booking_ids)
+        
+        for bid in sorted(all_bookings):
+            booking = self.connection.hgetall(f"booking:{bid}")
+            user = self.connection.hgetall(f"user:{booking['user_id']}")
+            hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
+            slot = self.get_hash_slot(f"booking:{bid}")
+            print(f"[{bid}] {user['name']} booked {hotel['name']} on {booking['date']} - port {self.get_node_port(slot)}")
+    
+    def show_key_info(self):
+        """Show info for any key."""
+        key = input("Key (e.g. user:1): ").strip()
+        if not key:
+            return
+        
+        slot = self.get_hash_slot(key)
+        print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+        
+        key_type = self.connection.type(key)
+        print(f"Type: {key_type}")
+        
+        if self.connection.exists(key):
+            if key_type == 'hash':
+                print(f"Data: {self.connection.hgetall(key)}")
+            elif key_type == 'list':
+                print(f"Data: {self.connection.lrange(key, 0, -1)}")
+            elif key_type == 'set':
+                print(f"Data: {self.connection.smembers(key)}")
+            elif key_type == 'string':
+                print(f"Data: {self.connection.get(key)}")

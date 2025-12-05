@@ -12,31 +12,14 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d
-    networks:
-      - hotel_network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: hotel_redis
-    platform: linux/amd64
-    ports:
-      - "16379:6379"
-    networks:
-      - hotel_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+# Note: Redis Cluster runs natively via setup_cluster.py (not Docker)
+# Redis Cluster requires special networking that works better natively
 
 volumes:
   mysql_data:
-
-networks:
-  hotel_network:
-    driver: bridge
