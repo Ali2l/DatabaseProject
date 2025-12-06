@@ -55,6 +55,7 @@ class RedisMigration:
         # Migrate Users (SQL row -> Redis Hash)
         for user in mysql_data['users']:
             key = f"user:{user['id']}"
+            # Insert user as Hash
             self.connection.hset(key, mapping={
                 'id': str(user['id']),
                 'name': user['name'],
@@ -64,7 +65,7 @@ class RedisMigration:
             port = self.get_node(slot)
             print(f"    {key} -> slot {slot} -> port {port}")
             
-            # Create indexes
+            # Insert into index Set
             self.connection.sadd('users:all', user['id'])
             self.connection.set(f"user:email:{user['email']}", user['id'])
             stats['users'] += 1
