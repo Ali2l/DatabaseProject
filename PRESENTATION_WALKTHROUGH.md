@@ -84,6 +84,24 @@ HGETALL hotel:1              → {name: "Grand Hotel"}
 
 ---
 
+```
+# 1. Show cluster slot distribution
+redis-cli -p 7001 CLUSTER SLOTS
+
+# 2. Check which slot a key belongs to
+redis-cli -p 7001 CLUSTER KEYSLOT "user:1"
+
+# 3. Count keys on EACH master (proves data is split)
+redis-cli -p 7001 DBSIZE
+redis-cli -p 7002 DBSIZE
+redis-cli -p 7003 DBSIZE
+
+# 4. Show keys stored on each specific node
+redis-cli -p 7001 KEYS "*"
+redis-cli -p 7002 KEYS "*"
+redis-cli -p 7003 KEYS "*"
+```
+
 ## Key Points to Mention
 
 1. **3 Tables** - Users, Hotels, Bookings with foreign keys

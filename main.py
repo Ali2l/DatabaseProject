@@ -18,12 +18,14 @@ def main():
     print("  Tables: Users, Hotels, Bookings (with foreign keys)")
     mysql = MySQLOperations(
         host='localhost', port=3306,
-        database='hotel_db', user='root', password='root'
+        database='hotel_db', user='root', password=''
     )
     mysql.connect()
     # Step 1.1: Create tables 
     mysql.create_tables()
-    # Step 1.2: Get all data
+    # Step 1.2: Insert sample data
+    mysql.insert_sample_data()
+    # Step 1.3: Get all data
     mysql_data = mysql.get_all_data()
     print(f"  Data: {len(mysql_data['users'])} users, {len(mysql_data['hotels'])} hotels, {len(mysql_data['bookings'])} bookings")
     

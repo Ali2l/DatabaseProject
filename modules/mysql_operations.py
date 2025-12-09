@@ -5,6 +5,7 @@ MySQL Operations - Handles MySQL database operations
 
 import mysql.connector
 import time
+import os
 
 
 class MySQLOperations:
@@ -35,39 +36,47 @@ class MySQLOperations:
                 time.sleep(3)
         raise Exception("Could not connect to MySQL")
     
-    def create_tables(self):
-        """Create Users, Hotels, and Bookings tables."""
+    def _execute_sql_file(self, filename):
+        """Execute SQL statements from a file."""
         cursor = self.connection.cursor()
         
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS Users (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(100) NOT NULL,
-                email VARCHAR(255) NOT NULL UNIQUE
-            )
-        """)
+        sql_file = os.path.join(os.path.dirname(__file__), '..', 'sql', filename)
+        with open(sql_file, 'r') as f:
+            sql_content = f.read()
         
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS Hotels (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(200) NOT NULL,
-                city VARCHAR(100) NOT NULL
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS Bookings (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                user_id INT NOT NULL,
-                hotel_id INT NOT NULL,
-                date DATE NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES Users(id),
-                FOREIGN KEY (hotel_id) REFERENCES Hotels(id)
-            )
-        """)
+        for statement in sql_content.split(';'):
+            statement = statement.strip()
+            if statement and not statement.startswith('--'):
+                cursor.execute(statement)
         
         self.connection.commit()
         cursor.close()
+    
+    def create_tables(self):
+        """Create tables from SQL schema file."""
+        cursor = self.connection.cursor()
+        
+        # Check if tables already exist
+        cursor.execute("SHOW TABLES LIKE 'Users'")
+        if cursor.fetchone():
+            cursor.close()
+            return  # Tables already exist
+        cursor.close()
+        
+        self._execute_sql_file('01_schema.sql')
+    
+    def insert_sample_data(self):
+        """Insert sample data from SQL file."""
+        cursor = self.connection.cursor()
+        
+        # Check if data already exists
+        cursor.execute("SELECT COUNT(*) FROM Users")
+        if cursor.fetchone()[0] > 0:
+            cursor.close()
+            return  # Data already exists
+        cursor.close()
+        
+        self._execute_sql_file('02_sample_data.sql')
     
     def get_all_data(self):
         """Get all data from all tables for migration."""
