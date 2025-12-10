@@ -42,6 +42,10 @@ CREATE TABLE Bookings (id, user_id, hotel_id, date)
 
 "We have 3 tables. Bookings has foreign keys to Users and Hotels."
 
+```
+// To show the tabels inserted
+docker exec -it hotel_mysql mysql -uroot -proot hotel_db -e "SELECT * FROM Users; SELECT * FROM Hotels; SELECT * FROM Bookings;"
+```
 ---
 
 ### Step 2: Show Data Mapping

@@ -18,7 +18,7 @@ def main():
     print("  Tables: Users, Hotels, Bookings (with foreign keys)")
     mysql = MySQLOperations(
         host='localhost', port=3306,
-        database='hotel_db', user='root', password=''
+        database='hotel_db', user='root', password='root'
     )
     mysql.connect()
     # Step 1.1: Create tables 
