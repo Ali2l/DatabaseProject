@@ -39,14 +39,22 @@ class RedisMigration:
         checksum = crc16.crc16xmodem(key.encode('utf-8'))
         return checksum % 16384
     
-    def get_node(self, slot):
-        """Get which master node handles this slot."""
-        if slot <= 5460:
-            return 7001
-        elif slot <= 10922:
-            return 7002
-        else:
-            return 7003
+    def get_node_for_slot(self, slot):
+        """Get the actual master and replica nodes for a slot from the cluster."""
+        cluster_slots = self.connection.cluster_slots()
+        
+        # Format: {(start, end): {'primary': (host, port), 'replicas': [(host, port), ...]}}
+        for (start_slot, end_slot), node_info in cluster_slots.items():
+            if start_slot <= slot <= end_slot:
+                master_port = node_info['primary'][1]
+                
+                replica_port = None
+                if node_info['replicas']:
+                    replica_port = node_info['replicas'][0][1]
+                
+                return master_port, replica_port
+        
+        return None, None
     
     def migrate_data(self, mysql_data):
         """Migrate MySQL data to Redis."""
@@ -62,8 +70,8 @@ class RedisMigration:
                 'email': user['email']
             })
             slot = self.get_hash_slot(key)
-            port = self.get_node(slot)
-            print(f"    {key} -> slot {slot} -> port {port}")
+            master_port, replica_port = self.get_node_for_slot(slot)
+            print(f"    {key} -> slot {slot} -> master {master_port}, replica {replica_port}")
             
             # Insert into index Set
             self.connection.sadd('users:all', user['id'])
@@ -79,8 +87,8 @@ class RedisMigration:
                 'city': hotel['city']
             })
             slot = self.get_hash_slot(key)
-            port = self.get_node(slot)
-            print(f"    {key} -> slot {slot} -> port {port}")
+            master_port, replica_port = self.get_node_for_slot(slot)
+            print(f"    {key} -> slot {slot} -> master {master_port}, replica {replica_port}")
             
             self.connection.sadd('hotels:all', hotel['id'])
             self.connection.sadd(f"hotels:city:{hotel['city']}", hotel['id'])
@@ -96,8 +104,8 @@ class RedisMigration:
                 'date': str(booking['date'])
             })
             slot = self.get_hash_slot(key)
-            port = self.get_node(slot)
-            print(f"    {key} -> slot {slot} -> port {port}")
+            master_port, replica_port = self.get_node_for_slot(slot)
+            print(f"    {key} -> slot {slot} -> master {master_port}, replica {replica_port}")
             
             # Foreign key replacement: add booking ID to user's list
             self.connection.lpush(f"user:{booking['user_id']}:bookings", booking['id'])

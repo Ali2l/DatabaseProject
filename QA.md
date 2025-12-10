@@ -45,12 +45,23 @@ Potential questions the doctor might ask during the presentation.
 > Each master node handles a range of slots.
 
 **Q: Which node stores which slots?**
-> - Master 7001: slots 0-5460
-> - Master 7002: slots 5461-10922
-> - Master 7003: slots 10923-16383
+> - Master 7001: slots 0-5460 (replica: 7004)
+> - Master 7002: slots 5461-10922 (replica: 7005)
+> - Master 7003: slots 10923-16383 (replica: 7006)
+
+**Q: How do you know which node stores a key?**
+> We query the actual cluster using `CLUSTER SLOTS` command, which returns the real topology:
+> ```python
+> cluster_slots = self.connection.cluster_slots()
+> # Returns: {(0, 5460): {'primary': ('127.0.0.1', 7001), 'replicas': [('127.0.0.1', 7004)]}, ...}
+> ```
+> This is dynamic - if a master fails and replica takes over, it updates automatically.
 
 **Q: Where is the hash slot calculation?**
 > File: `modules/redis_migration.py`, function: `get_hash_slot()`
+
+**Q: Where do you get the node info from?**
+> File: `modules/redis_migration.py`, function: `get_node_for_slot()` - queries `CLUSTER SLOTS`
 
 **Q: Why is data distributed unevenly across nodes?**
 > The CRC16 hash distributes keys randomly. With small data, some nodes may have more keys than others. With larger datasets, distribution becomes more even.
@@ -64,6 +75,16 @@ Potential questions the doctor might ask during the presentation.
 
 **Q: What is replication?**
 > Each master automatically copies its data to a replica. This provides fault tolerance.
+> - Master 7001 → Replica 7004
+> - Master 7002 → Replica 7005
+> - Master 7003 → Replica 7006
+
+**Q: How do you show both master and replica in the output?**
+> During migration and queries, we display both:
+> ```
+> user:1 -> slot 10778 -> master 7002, replica 7005
+> ```
+> This info is queried from the live cluster, not hardcoded.
 
 **Q: Where do you create the cluster?**
 > File: `setup_cluster.py`, function: `create_cluster()`
@@ -115,5 +136,7 @@ Potential questions the doctor might ask during the presentation.
 | Where are tables created? | `mysql_operations.py` | `create_tables()` |
 | Where is data migrated? | `redis_migration.py` | `migrate_data()` |
 | Where is hash slot calculated? | `redis_migration.py` | `get_hash_slot()` |
+| Where is node info queried? | `redis_migration.py` | `get_node_for_slot()` |
 | Where are Redis queries? | `redis_queries.py` | `run_interactive()` |
+| Where is key info shown? | `redis_queries.py` | `show_key_info()` |
 | Where is cluster created? | `setup_cluster.py` | `create_cluster()` |

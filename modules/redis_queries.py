@@ -16,13 +16,25 @@ class RedisQueries:
         """Calculate hash slot for a key."""
         return crc16.crc16xmodem(key.encode('utf-8')) % 16384
     
-    def get_node_port(self, slot):
-        """Get the port of the node that handles this slot."""
-        if slot <= 5460:
-            return 7001
-        elif slot <= 10922:
-            return 7002
-        return 7003
+    def get_node_for_key(self, key):
+        """Get the actual master and replica nodes for a key from the cluster."""
+        slot = self.get_hash_slot(key)
+        
+        # Get all slot ranges from the cluster
+        # Format: {(start, end): {'primary': (host, port), 'replicas': [(host, port), ...]}}
+        cluster_slots = self.connection.cluster_slots()
+        
+        for (start_slot, end_slot), node_info in cluster_slots.items():
+            if start_slot <= slot <= end_slot:
+                master_port = node_info['primary'][1]
+                
+                replica_port = None
+                if node_info['replicas']:
+                    replica_port = node_info['replicas'][0][1]
+                
+                return master_port, replica_port
+        
+        return None, None
     
     def run_interactive(self):
         """Run interactive query menu."""
@@ -73,10 +85,11 @@ class RedisQueries:
         
         key = f"user:{user_id}"
         slot = self.get_hash_slot(key)
+        master_port, replica_port = self.get_node_for_key(key)
         user = self.connection.hgetall(key)
         
         if user:
-            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            print(f"Key: {key}, Slot: {slot}, Master: {master_port}, Replica: {replica_port}")
             print(f"Name: {user.get('name')}, Email: {user.get('email')}")
         else:
             print("User not found")
@@ -116,8 +129,10 @@ class RedisQueries:
         for bid in booking_ids:
             booking = self.connection.hgetall(f"booking:{bid}")
             hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
-            slot = self.get_hash_slot(f"booking:{bid}")
-            print(f"Booking {bid}: {booking['date']} at {hotel['name']} (slot {slot}, port {self.get_node_port(slot)})")
+            key = f"booking:{bid}"
+            slot = self.get_hash_slot(key)
+            master_port, replica_port = self.get_node_for_key(key)
+            print(f"Booking {bid}: {booking['date']} at {hotel['name']} (slot {slot}, master {master_port}, replica {replica_port})")
     
     def query_hotel_by_id(self):
         """Get hotel by ID."""
@@ -127,10 +142,11 @@ class RedisQueries:
         
         key = f"hotel:{hotel_id}"
         slot = self.get_hash_slot(key)
+        master_port, replica_port = self.get_node_for_key(key)
         hotel = self.connection.hgetall(key)
         
         if hotel:
-            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            print(f"Key: {key}, Slot: {slot}, Master: {master_port}, Replica: {replica_port}")
             print(f"Name: {hotel.get('name')}, City: {hotel.get('city')}")
         else:
             print("Hotel not found")
@@ -163,7 +179,8 @@ class RedisQueries:
         if booking:
             user = self.connection.hgetall(f"user:{booking['user_id']}")
             hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
-            print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+            master_port, replica_port = self.get_node_for_key(key)
+            print(f"Key: {key}, Slot: {slot}, Master: {master_port}, Replica: {replica_port}")
             print(f"Date: {booking['date']}, User: {user['name']}, Hotel: {hotel['name']}")
         else:
             print("Booking not found")
@@ -173,16 +190,18 @@ class RedisQueries:
         user_ids = self.connection.smembers('users:all')
         for uid in sorted(user_ids):
             user = self.connection.hgetall(f"user:{uid}")
-            slot = self.get_hash_slot(f"user:{uid}")
-            print(f"[{uid}] {user['name']} - port {self.get_node_port(slot)}")
+            key = f"user:{uid}"
+            master_port, replica_port = self.get_node_for_key(key)
+            print(f"[{uid}] {user['name']} - master {master_port}, replica {replica_port}")
     
     def list_all_hotels(self):
         """List all hotels."""
         hotel_ids = self.connection.smembers('hotels:all')
         for hid in sorted(hotel_ids):
             hotel = self.connection.hgetall(f"hotel:{hid}")
-            slot = self.get_hash_slot(f"hotel:{hid}")
-            print(f"[{hid}] {hotel['name']} in {hotel['city']} - port {self.get_node_port(slot)}")
+            key = f"hotel:{hid}"
+            master_port, replica_port = self.get_node_for_key(key)
+            print(f"[{hid}] {hotel['name']} in {hotel['city']} - master {master_port}, replica {replica_port}")
     
     def list_all_bookings(self):
         """List all bookings."""
@@ -197,8 +216,9 @@ class RedisQueries:
             booking = self.connection.hgetall(f"booking:{bid}")
             user = self.connection.hgetall(f"user:{booking['user_id']}")
             hotel = self.connection.hgetall(f"hotel:{booking['hotel_id']}")
-            slot = self.get_hash_slot(f"booking:{bid}")
-            print(f"[{bid}] {user['name']} booked {hotel['name']} on {booking['date']} - port {self.get_node_port(slot)}")
+            key = f"booking:{bid}"
+            master_port, replica_port = self.get_node_for_key(key)
+            print(f"[{bid}] {user['name']} booked {hotel['name']} on {booking['date']} - master {master_port}, replica {replica_port}")
     
     def show_key_info(self):
         """Show info for any key."""
@@ -207,17 +227,23 @@ class RedisQueries:
             return
         
         slot = self.get_hash_slot(key)
-        print(f"Key: {key}, Slot: {slot}, Port: {self.get_node_port(slot)}")
+        master_port, replica_port = self.get_node_for_key(key)
+        
+        if not self.connection.exists(key):
+            print(f"Key '{key}' does NOT exist in Redis")
+            print(f"(Would be at Slot: {slot}, Master: {master_port}, Replica: {replica_port})")
+            return
+        
+        print(f"Key: {key}, Slot: {slot}, Master: {master_port}, Replica: {replica_port}")
         
         key_type = self.connection.type(key)
         print(f"Type: {key_type}")
         
-        if self.connection.exists(key):
-            if key_type == 'hash':
-                print(f"Data: {self.connection.hgetall(key)}")
-            elif key_type == 'list':
-                print(f"Data: {self.connection.lrange(key, 0, -1)}")
-            elif key_type == 'set':
-                print(f"Data: {self.connection.smembers(key)}")
-            elif key_type == 'string':
-                print(f"Data: {self.connection.get(key)}")
+        if key_type == 'hash':
+            print(f"Data: {self.connection.hgetall(key)}")
+        elif key_type == 'list':
+            print(f"Data: {self.connection.lrange(key, 0, -1)}")
+        elif key_type == 'set':
+            print(f"Data: {self.connection.smembers(key)}")
+        elif key_type == 'string':
+            print(f"Data: {self.connection.get(key)}")

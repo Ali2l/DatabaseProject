@@ -63,15 +63,17 @@ MySQL:                          Redis:
 
 ---
 
-### Step 3: Show Sharding
+### Step 3: Show Sharding & Replication
 
 ```
-user:1 -> slot 10778 -> port 7002
-user:3 -> slot 2648  -> port 7001
-hotel:4 -> slot 14648 -> port 7003
+user:1 -> slot 10778 -> master 7002, replica 7005
+user:3 -> slot 2648  -> master 7001, replica 7004
+hotel:4 -> slot 14648 -> master 7003, replica 7006
 ```
 
-"Redis uses CRC16 to hash the key. The slot determines which node stores the data."
+"Redis uses CRC16 to hash the key. The slot determines which master stores the data. Each master has a replica for fault tolerance."
+
+**Note:** The master/replica info is queried dynamically from the cluster using `CLUSTER SLOTS`, not hardcoded.
 
 ---
 
@@ -112,4 +114,6 @@ redis-cli -p 7003 KEYS "*"
 2. **Data Mapping** - Row → Hash, Foreign Key → List
 3. **6-Node Cluster** - 3 masters + 3 replicas
 4. **Sharding** - CRC16 hash → 16384 slots → 3 nodes
-5. **Queries** - No SQL, just Redis commands
+5. **Replication** - Each key shows both master AND replica node (queried from real cluster)
+6. **Queries** - No SQL, just Redis commands
+7. **Dynamic Topology** - Node info comes from `CLUSTER SLOTS`, handles failover automatically
